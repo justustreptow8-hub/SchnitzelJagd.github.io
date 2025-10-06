@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Schnitzeljagd — Ketteler Hof</title>
+  <style>
+    :root{
+      --accent:#2b8a8a;
+      --bg:#f7f7f9;
+      --card:#ffffff;
+      --muted:#666;
+      --success:#2e7d32;
+    }
+    * {box-sizing:border-box}
+    body {
+      font-family: system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial;
+      margin:0; background:var(--bg); color:#111;
+      -webkit-font-smoothing:antialiased;
+    }
+    header{background:linear-gradient(90deg,var(--accent),#4fb0b0); color:white; padding:18px}
+    header h1{margin:0; font-size:18px}
+    .container{max-width:1000px;margin:18px auto;padding:12px}
+    .grid{display:grid;grid-template-columns:1fr;gap:12px}
+    @media(min-width:900px){ .grid{grid-template-columns: 1fr 360px} }
+    .card{background:var(--card);padding:12px;border-radius:10px;box-shadow:0 1px 6px rgba(0,0,0,.06)}
+    label{display:block;margin-bottom:6px;font-weight:600}
+    input[type=text], select, button, textarea {
+      width:100%; padding:10px;border:1px solid #ddd;border-radius:8px;font-size:15px;
+    }
+    button{background:var(--accent);color:#fff;border:none;padding:10px 12px;cursor:pointer;border-radius:8px}
+    button.secondary{background:#f0f0f0;color:#222}
+    .teams-list {display:flex;gap:8px;flex-wrap:wrap}
+    .team-pill{padding:8px 10px;border-radius:20px;background:#eef;cursor:pointer}
+    .team-pill.active{background:var(--accent);color:white}
+    .small{font-size:13px;color:var(--muted)}
+    .qr-preview{display:flex;gap:8px;align-items:center}
+    .leaderboard-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed #eee}
+    .correct{color:var(--success);font-weight:700}
+    .hidden{display:none}
+    .score{font-weight:700}
+    footer{padding:18px;text-align:center;color:var(--muted);font-size:13px}
+    .question-options{display:grid;gap:8px;margin-top:8px}
+    .option{padding:10px;border-radius:8px;border:1px solid #eee;background:#fafafa;cursor:pointer}
+    .option.selected{border-color:var(--accent);box-shadow:0 2px 8px rgba(43,138,138,.12)}
+    .topline{display:flex;justify-content:space-between;align-items:center;gap:12px}
+  </style>
+  <!-- html5-qrcode library (für QR-Scanning) -->
+  <script src="https://unpkg.com/html5-qrcode@2.4.0/minified/html5-qrcode.min.js"></script>
+</head>
+<body>
+  <header>
+    <div class="container topline">
+      <h1>Schnitzeljagd — Ketteler Hof (Haltern am See)</h1>
+      <div class="small">Team-modus · QR-Scan · Bestenliste</div>
+    </div>
+  </header>
+
+  <main class="container grid">
+    <!-- Hauptbereich -->
+    <section class="card">
+      <div id="current-team-area">
+        <label>Team auswählen / neu anlegen</label>
+        <div style="display:flex;gap:8px">
+          <input id="team-name" placeholder="Teamname (z. B. Familie Meier)" />
+          <button id="create-team">+ Team erstellen</button>
+        </div>
+        <div style="margin-top:10px">
+          <label>Vorhandene Teams</label>
+          <div id="teams" class="teams-list small"></div>
+        </div>
+      </div>
+
+      <hr style="margin:12px 0">
+
+      <div id="scanner-area">
+        <label>QR Code scannen</label>
+        <div id="reader" style="width:100%;min-height:180px;background:#000;border-radius:8px;overflow:hidden"></div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button id="start-scan">Kamera starten</button>
+          <button id="stop-scan" class="secondary">Stopp</button>
+          <input id="manual-code" placeholder="oder Code manuell eingeben (z. B. KH01)" />
+          <button id="submit-manual" class="secondary">Senden</button>
+        </div>
+        <div class="small" style="margin-top:8px">Hinweis: Die QR-Codes sollten den reinen Text-Code (z. B. <code>KH01</code>) enthalten.</div>
+      </div>
+
+      <hr style="margin:12px 0">
+
+      <div id="question-area" class="hidden">
+        <label>Frage</label>
+        <div id="question-text" style="font-weight:700;margin-bottom:8px"></div>
+        <div id="options" class="question-options"></div>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button id="submit-answer">Antwort absenden</button>
+          <button id="skip" class="secondary">Überspringen</button>
+        </div>
+        <div id="result" style="margin-top:10px"></div>
+      </div>
+
+      <hr style="margin:12px 0">
+
+      <div>
+        <label>QR Codes erzeugen / ausdrucken</label>
+        <div class="small">Wähle einen Code aus der Liste unten und klicke auf "QR erzeugen" — dann kannst du das Bild speichern/ausdrucken.</div>
+        <div id="qr-list" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-top:8px"></div>
+      </div>
+    </section>
+
+    <!-- Sidebar: Leaderboard & Info -->
+    <aside>
+      <div class="card">
+        <h3>Bestenliste</h3>
+        <div id="leaderboard"></div>
+        <div style="margin-top:8px;text-align:right">
+          <button id="reset-scores" class="secondary">Scores zurücksetzen</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <h3>Über die Runde</h3>
+        <p class="small">Diese Schnitzeljagd ist für den <strong>Ketteler Hof</strong> angepasst. Orte sind u. a. Kletterturm, Wasserspielplatz, Sommerrodelbahn, Indoorspielhalle und Meerschweinchen-Bereich. Jeder gescannte Code öffnet eine Frage — richtige Antworten bringen Punkte.</p>
+        <p class="small"><strong>Adresse Ketteler Hof:</strong><br>Rekener Straße 234, 45721 Haltern am See</p>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <h3>Admin</h3>
+        <p class="small">Punkte pro richtige Antwort: <input id="points-per" value="10" style="width:80px;display:inline-block;margin-left:8px" /></p>
+      </div>
+    </aside>
+  </main>
+
+  <footer>
+    Erstellt für: Schnitzeljagd im Ketteler Hof · <span id="status-ver">v1.0</span>
+  </footer>
+
+  <script>
+  /************************************************************************
+   * Daten: Codes + Fragen angepasst auf Ketteler Hof (Haltern am See)
+   * Jeder code hat:
+   *  id: Code-String (z. B. "KH01")
+   *  title: Ort
+   *  qtype: "mc" (multiple choice) oder "text"
+   *  question: Fragentext
+   *  options: Array (bei MC)
+   *  answer: index (bei MC) oder text
+   ************************************************************************/
+  const QUESTIONS = [
+    { id:"KH01", title:"Eingang & Info", qtype:"mc",
+      question:"Womit beginnt ein typischer Tag im Ketteler Hof laut Parkbeschreibung?",
+      options:["Mit einer Rodelpartie","Mit Entdecken der Spielwelten","Mit einer Bootstour auf dem See","Mit einem Picknick am Parkplatz"],
+      answer:1
+    },
+    { id:"KH02", title:"Großer Kletterturm", qtype:"mc",
+      question:"Wofür ist der Ketteler Hof besonders berühmt?",
+      options:["Für seine Achterbahn","Für außergewöhnliche Kletterwelten","Für Aquarien und Fische","Für Vogelbeobachtung"],
+      answer:1
+    },
+    { id:"KH03", title:"Wasserspielplatz", qtype:"mc",
+      question:"Welche Attraktion ist am Wasserspielplatz typisch?",
+      options:["Eisbahn","Wasserlandschaften mit Spritzgeräten","Zoo-Gehege","Theaterbühne"],
+      answer:1
+    },
+    { id:"KH04", title:"Sommerrodelbahn", qtype:"mc",
+      question:"Die Sommerrodelbahn ist besonders beliebt — welche Jahreszeit ist ideal dafür?",
+      options:["Winter","Herbst","Sommer","Frühling"],
+      answer:2
+    },
+    { id:"KH05", title:"Indoorspielhalle", qtype:"mc",
+      question:"Warum lohnt sich ein Besuch der Indoorspielhalle?",
+      options:["Nur bei Sonnenwetter","Weil sie ganzjährig und bei jedem Wetter geöffnet ist","Nur für Erwachsene","Weil dort Tiere wohnen"],
+      answer:1
+    },
+    { id:"KH06", title:"Meerschweinchen-Ecke", qtype:"mc",
+      question:"Was können Kinder in der kleinen Tier-Ecke oft sehen oder anfassen?",
+      options:["Meerschweinchen und Kleintiere","Giraffen","Haifische","Pinguine"],
+      answer:0
+    },
+    { id:"KH07", title:"Aussichtsturm / Holzbrücke", qtype:"mc",
+      question:"Von hohen Klettertürmen hat man meist einen guten Blick — was sieht man oft rund um den Ketteler Hof?",
+      options:["Wüste","Wälder und Wiesen","Vulkane","Hochhäuser"],
+      answer:1
+    },
+    { id:"KH08", title:"See / Wasserbereich", qtype:"text",
+      question:"Wie heißt die Straße, an der der Ketteler Hof liegt? (einfaches Stichwort reicht)",
+      answer:"rekener straße"
+    }
+  ];
+
+  // --- Hilfsfunktionen / State ---
+  let activeTeam = null;
+  const POINTS_PER = () => parseInt(document.getElementById('points-per').value) || 10;
+  const TEAMS_KEY = "kh_schnitzel_teams_v1";
+  const SCORES_KEY = "kh_schnitzel_scores_v1";
+
+  function loadTeams() {
+    try {
+      return JSON.parse(localStorage.getItem(TEAMS_KEY) || "[]");
+    } catch(e){ return [] }
+  }
+  function saveTeams(t){ localStorage.setItem(TEAMS_KEY, JSON.stringify(t)); }
+  function loadScores(){ try { return JSON.parse(localStorage.getItem(SCORES_KEY) || "{}"); } catch(e){ return {} } }
+  function saveScores(s){ localStorage.setItem(SCORES_KEY, JSON.stringify(s)); }
+
+  // --- UI: Teams ---
+  function renderTeams(){
+    const container = document.getElementById('teams');
+    container.innerHTML = "";
+    const teams = loadTeams();
+    if(teams.length===0){
+      container.innerHTML = "<div class='small'>Noch keine Teams.</div>";
+      return;
+    }
+    teams.forEach(t=>{
+      const el = document.createElement('div');
+      el.className = "team-pill" + (activeTeam===t.name?" active":"");
+      el.textContent = t.name;
+      el.onclick = ()=>{ activeTeam = t.name; renderTeams(); renderLeaderboard(); }
+      container.appendChild(el);
+    });
+  }
+
+  document.getElementById('create-team').addEventListener('click', ()=>{
+    const name = document.getElementById('team-name').value.trim();
+    if(!name){ alert("Bitte einen Teamnamen eingeben."); return; }
+    const teams = loadTeams();
+    if(teams.some(t=>t.name===name)){ alert("Team existiert bereits."); return; }
+    teams.push({name, created: Date.now()});
+    saveTeams(teams);
+    document.getElementById('team-name').value="";
+    activeTeam = name;
+    renderTeams();
+    renderLeaderboard();
+  });
+
+  // --- Leaderboard ---
+  function renderLeaderboard(){
+    const lb = document.getElementById('leaderboard');
+    const teams = loadTeams();
+    const scores = loadScores();
+    const rows = teams.map(t=>{
+      return { name: t.name, score: scores[t.name] || 0 }
+    }).sort((a,b)=>b.score - a.score);
+    if(rows.length===0){ lb.innerHTML="<div class='small'>Noch keine Einträge.</div>"; return; }
+    lb.innerHTML = "";
+    rows.forEach(r=>{
+      const div = document.createElement('div');
+      div.className = "leaderboard-row";
+      div.innerHTML = `<div>${r.name}</div><div class="score">${r.score} P.</div>`;
+      lb.appendChild(div);
+    });
+  }
+
+  document.getElementById('reset-scores').addEventListener('click', ()=>{
+    if(!confirm("Bestätigen: Alle Scores zurücksetzen?")) return;
+    localStorage.removeItem(SCORES_KEY);
+    renderLeaderboard();
+  });
+
+  // --- QR-Code Erzeuger-Liste ---
+  function renderQrList(){
+    const wrap = document.getElementById('qr-list');
+    wrap.innerHTML = "";
+    QUESTIONS.forEach(q=>{
+      const card = document.createElement('div');
+      card.style.border="1px solid #eee"; card.style.padding="10px"; card.style.borderRadius="8px"; card.style.background="#fafafa";
+      card.innerHTML = `<strong>${q.id}</strong><div class="small">${q.title}</div><div style="margin-top:8px;display:flex;gap:6px"><button data-code="${q.id}" class="gen-qr">QR erzeugen</button><a class="qr-link hidden" target="_blank">Öffnen</a></div><div class="small" style="margin-top:6px">Payload: <code>${q.id}</code></div>`;
+      wrap.appendChild(card);
+      card.querySelector('.gen-qr').addEventListener('click', (ev)=>{
+        const code = ev.target.getAttribute('data-code');
+        // use qrserver API to create image
+        const url = "https://api.qrserver.com/v1/create-qr-code/?size=220x220&data="+encodeURIComponent(code);
+        // open in new tab or show link
+        window.open(url, "_blank");
+      });
+    });
+  }
+
+  // --- QR Scanner (html5-qrcode) ---
+  let html5QrCode = null;
+  let scanning = false;
+  const qrRegionId = "reader";
+
+  function startScanner(){
+    if(scanning) return;
+    const qrCodeSuccessCallback = (decodedText, decodedResult) => {
+      // Stop scanning briefly to handle result
+      if(scanning && decodedText){
+        stopScanner();
+        handleScannedCode(decodedText.trim());
+      }
+    };
+    const config = { fps: 10, qrbox: 250 };
+    html5QrCode = new Html5Qrcode(qrRegionId);
+    Html5Qrcode.getCameras().then(cameras=>{
+      if(cameras && cameras.length){
+        const cameraId = cameras[0].id;
+        html5QrCode.start(cameraId, config, qrCodeSuccessCallback)
+          .then(()=>{ scanning=true; })
+          .catch(err=>{ alert("Kamerafehler: " + err); });
+      } else { alert("Keine Kamera gefunden."); }
+    }).catch(err=>{
+      alert("Fehler beim Zugriff auf Kameras: " + err);
+    });
+  }
+  function stopScanner(){
+    if(!html5QrCode) return;
+    html5QrCode.stop().then(()=>{ html5QrCode.clear(); scanning=false; })
+      .catch(()=>{ scanning=false; });
+  }
+
+  document.getElementById('start-scan').addEventListener('click', startScanner);
+  document.getElementById('stop-scan').addEventListener('click', stopScanner);
+
+  // --- Manuelle Codeeingabe ---
+  document.getElementById('submit-manual').addEventListener('click', ()=>{
+    const v = document.getElementById('manual-code').value.trim();
+    if(!v) return alert("Bitte Code eingeben.");
+    handleScannedCode(v);
+  });
+
+  // --- Handle scanned code ---
+  function handleScannedCode(code){
+    // normalize: many QR tools may include url -> support both pure code or url containing code
+    // try extract pattern like KH01
+    const match = code.match(/(KH0?\d{1,2})/i);
+    let codeId = null;
+    if(match) codeId = match[1].toUpperCase();
+    else codeId = code.toUpperCase();
+
+    const q = QUESTIONS.find(x=>x.id === codeId);
+    if(!q){ alert("Kein Frage-Code gefunden für: " + codeId + ". Stelle sicher, dass du den richtigen QR-Code scannst."); return; }
+    showQuestion(q);
+  }
+
+  // --- Show question UI ---
+  let currentQuestion = null;
+  function showQuestion(q){
+    if(!activeTeam){ alert("Bitte zuerst ein Team auswählen oder erstellen."); return; }
+    currentQuestion = q;
+    document.getElementById('question-area').classList.remove('hidden');
+    document.getElementById('question-text').textContent = q.question;
+    const opts = document.getElementById('options');
+    opts.innerHTML = "";
+    if(q.qtype === "mc"){
+      q.options.forEach((opt,i)=>{
+        const d = document.createElement('div');
+        d.className = "option";
+        d.textContent = opt;
+        d.dataset.index = i;
+        d.onclick = ()=>{ Array.from(opts.children).forEach(c=>c.classList.remove('selected')); d.classList.add('selected'); };
+        opts.appendChild(d);
+      });
+    } else if(q.qtype === "text"){
+      const ta = document.createElement('input');
+      ta.type = "text"; ta.id = "text-answer"; ta.placeholder = "Antwort eingeben...";
+      opts.appendChild(ta);
+    }
+    document.getElementById('result').innerHTML="";
+    // stop camera to save battery
+    stopScanner();
+  }
+
+  document.getElementById('submit-answer').addEventListener('click', ()=>{
+    if(!currentQuestion) return;
+    let correct = false;
+    if(currentQuestion.qtype === "mc"){
+      const sel = document.querySelector('#options .option.selected');
+      if(!sel){ alert("Bitte eine Antwort auswählen."); return; }
+      const idx = parseInt(sel.dataset.index);
+      correct = idx === currentQuestion.answer;
+    } else {
+      const val = document.getElementById('text-answer').value.trim().toLowerCase();
+      const expected = (""+currentQuestion.answer).trim().toLowerCase();
+      // check contains (relaxed)
+      correct = val.length>0 && (val === expected || expected.includes(val) || val.includes(expected));
+    }
+
+    const resultDiv = document.getElementById('result');
+    if(correct){
+      // add points
+      const scores = loadScores();
+      scores[activeTeam] = (scores[activeTeam] || 0) + POINTS_PER();
+      saveScores(scores);
+      renderLeaderboard();
+      resultDiv.innerHTML = `<div class="correct">Richtig! +${POINTS_PER()} Punkte</div>`;
+    } else {
+      resultDiv.innerHTML = `<div style="color:#b22222;font-weight:700">Leider falsch.</div>`;
+    }
+    // mark question as answered for team to avoid repeat (simple local marking)
+    markQuestionAnswered(activeTeam, currentQuestion.id);
+    // hide question after short delay
+    setTimeout(()=>{ document.getElementById('question-area').classList.add('hidden'); currentQuestion=null; }, 1600);
+  });
+
+  document.getElementById('skip').addEventListener('click', ()=>{
+    document.getElementById('question-area').classList.add('hidden');
+    currentQuestion=null;
+  });
+
+  // --- Prevent double-scoring: per-team answered list ---
+  const ANSWERED_KEY = "kh_answered_v1";
+  function loadAnswered(){ try { return JSON.parse(localStorage.getItem(ANSWERED_KEY) || "{}"); } catch(e){ return {} } }
+  function saveAnswered(a){ localStorage.setItem(ANSWERED_KEY, JSON.stringify(a)); }
+  function markQuestionAnswered(team, qid){
+    const a = loadAnswered();
+    if(!a[team]) a[team] = [];
+    if(!a[team].includes(qid)) a[team].push(qid);
+    saveAnswered(a);
+  }
+  function hasAnswered(team, qid){
+    const a = loadAnswered();
+    return a[team] && a[team].includes(qid);
+  }
+
+  // --- Init UI ---
+  function init(){
+    renderTeams();
+    renderLeaderboard();
+    renderQrList();
+    // add default teams sample (if none)
+    if(loadTeams().length === 0){
+      const sample = [{name:"Team A"},{name:"Team B"}];
+      saveTeams(sample);
+      renderTeams();
+    }
+  }
+  init();
+
+  // switch to selected team when clicking leaderboard rows? keep simple
+  </script>
+</body>
+</html>
